@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Codex Pet Terminal</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: #0b0d10; color: #eef2f6; }
+    main { max-width: 980px; margin: 0 auto; padding: 28px 18px 56px; }
+    h1 { margin: 0; font-size: clamp(28px, 5vw, 46px); }
+    .sub { color: #9da8b5; margin: 8px 0 24px; }
+    .grid { display: grid; grid-template-columns: 1.05fr .95fr; gap: 18px; }
+    .card { border: 1px solid #232831; border-radius: 22px; background: #12161c; padding: 18px; }
+    .screen { min-height: 380px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; background: radial-gradient(circle at 50% 25%, #202833, #11161c 62%); overflow: hidden; }
+    .pet { font-size: 104px; line-height: 1; user-select: none; cursor: pointer; transition: transform .16s ease; }
+    .pet:active { transform: scale(.94); }
+    .status { margin-top: 20px; font-weight: 700; font-size: 22px; }
+    .message { color: #aab4c0; margin-top: 8px; min-height: 42px; }
+    .pill { display: inline-flex; gap: 8px; align-items: center; border: 1px solid #2b313b; border-radius: 999px; padding: 7px 10px; color: #aeb7c2; font-size: 12px; }
+    .topline { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #646b75; }
+    .dot.on { background: #65d68a; box-shadow: 0 0 14px #65d68a55; }
+    .approval { display: none; margin-top: 16px; padding: 14px; border: 1px solid #4a3939; border-radius: 16px; background: #1c1515; }
+    .approval.show { display: block; }
+    code { display: block; white-space: pre-wrap; word-break: break-word; padding: 12px; border-radius: 12px; background: #090b0e; color: #dce5ef; margin-top: 10px; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; }
+    button, input, textarea { font: inherit; }
+    button { min-height: 44px; border-radius: 12px; border: 1px solid #303844; background: #1b2129; color: #eef2f6; padding: 10px 14px; cursor: pointer; }
+    button.primary { background: #e8eef7; color: #0a0d11; border-color: #e8eef7; font-weight: 700; }
+    button.danger { border-color: #6c3c3c; background: #2a1717; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    .stack { display: grid; gap: 12px; }
+    label { display: grid; gap: 7px; color: #aab4c0; font-size: 13px; }
+    input, textarea { width: 100%; border: 1px solid #303844; border-radius: 12px; background: #0d1116; color: #eef2f6; padding: 11px 12px; outline: none; }
+    textarea { min-height: 88px; resize: vertical; }
+    .small { color: #89939f; font-size: 12px; line-height: 1.5; }
+    .event { min-height: 78px; padding: 12px; background: #0d1116; border-radius: 12px; color: #aab4c0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; white-space: pre-wrap; }
+    @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Codex Pet Terminal</h1>
+  <p class="sub">先在 Mac 上把宠物、状态和授权流程跑通，再搬到 ESP32-S3 小屏幕。</p>
+  <div class="grid">
+    <section class="card screen">
+      <div class="topline" style="width:100%">
+        <span class="pill"><span id="dot" class="dot"></span><span id="conn">Companion disconnected</span></span>
+        <span id="statePill" class="pill">offline</span>
+      </div>
+      <div id="pet" class="pet" role="button" tabindex="0" aria-label="摸摸宠物">😴</div>
+      <div id="status" class="status">离线</div>
+      <div id="message" class="message">等待连接 Companion</div>
+
+      <div id="approval" class="approval" style="width:100%; text-align:left">
+        <strong>⚠ Codex 请求授权</strong>
+        <div id="approvalReason" class="small" style="margin-top:8px"></div>
+        <code id="approvalCommand">—</code>
+        <div id="approvalCwd" class="small" style="margin:8px 0 12px"></div>
+        <div class="row">
+          <button id="decline" class="danger" style="flex:1">拒绝</button>
+          <button id="accept" class="primary" style="flex:1">允许</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="stack">
+      <div class="card stack">
+        <strong>本地调试</strong>
+        <div class="row">
+          <button id="connectCodex">连接 Codex app-server</button>
+          <button id="mockApproval">模拟授权请求</button>
+        </div>
+        <div class="small">模拟授权不执行任何命令，只用来测试宠物屏幕和按钮逻辑。</div>
+      </div>
+
+      <div class="card stack">
+        <strong>从 Companion 启动一个 Codex 任务</strong>
+        <label>工作目录
+          <input id="cwd" placeholder="/Users/you/code/project" />
+        </label>
+        <label>任务
+          <textarea id="prompt" placeholder="例如：检查当前项目并修复一个简单问题"></textarea>
+        </label>
+        <div class="row">
+          <button id="newThread">新建 Thread</button>
+          <button id="runTurn" class="primary">运行任务</button>
+        </div>
+        <div id="threadInfo" class="small">Thread: 尚未创建</div>
+      </div>
+
+      <div class="card stack">
+        <strong>最近事件</strong>
+        <div id="event" class="event">等待事件…</div>
+      </div>
+    </section>
+  </div>
+</main>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const dot = $('dot'), conn = $('conn'), pet = $('pet'), status = $('status'), message = $('message');
+  const statePill = $('statePill'), approval = $('approval'), approvalReason = $('approvalReason');
+  const approvalCommand = $('approvalCommand'), approvalCwd = $('approvalCwd'), event = $('event');
+  let currentApproval = null;
+  let threadId = null;
+
+  const petByState = {
+    offline: ['😴','离线'], idle: ['🐱','待命'], thinking: ['🤔','思考中'], coding: ['⌨️','工作中'],
+    approval: ['🚨','需要授权'], done: ['🎉','完成'], error: ['😵','出错了']
+  };
+
+  function log(text) { event.textContent = `[${new Date().toLocaleTimeString()}] ${text}`; }
+  function applyState(s) {
+    const pair = petByState[s.state] || petByState.idle;
+    pet.textContent = pair[0]; status.textContent = pair[1]; message.textContent = s.message || '';
+    statePill.textContent = s.state;
+    if (s.state !== 'approval' && !currentApproval) approval.classList.remove('show');
+  }
+  function send(msg) { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg)); }
+  function decision(value) {
+    if (!currentApproval) return;
+    send({ type:'approval.decision', requestId: currentApproval.requestId, decision:value });
+    log(`发送 ${value}: ${currentApproval.requestId}`);
+  }
+
+  const ws = new WebSocket(`ws://${location.host}/ws-ui`);
+  ws.addEventListener('open', () => { dot.classList.add('on'); conn.textContent = 'Companion connected'; log('UI WebSocket connected'); });
+  ws.addEventListener('close', () => { dot.classList.remove('on'); conn.textContent = 'Companion disconnected'; });
+  ws.addEventListener('message', (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'state') applyState(msg.payload);
+    if (msg.type === 'approval.request') {
+      currentApproval = msg.payload;
+      approval.classList.add('show');
+      approvalReason.textContent = msg.payload.reason || msg.payload.kind;
+      approvalCommand.textContent = msg.payload.command || (msg.payload.kind === 'fileChange' ? 'Codex wants to modify files' : 'No command provided');
+      approvalCwd.textContent = msg.payload.cwd ? `cwd: ${msg.payload.cwd}` : '';
+      log(`approval.request ${msg.payload.requestId}`);
+    }
+    if (msg.type === 'approval.resolved') {
+      if (currentApproval?.requestId === msg.payload.requestId) currentApproval = null;
+      approval.classList.remove('show');
+      log(`approval.resolved → ${msg.payload.decision}`);
+    }
+    if (msg.type === 'pet.reaction') {
+      const old = pet.textContent; pet.textContent = msg.payload.reaction === 'happy' ? '😽' : msg.payload.reaction === 'surprised' ? '🙀' : '😸';
+      message.textContent = msg.payload.message;
+      setTimeout(() => { if (old) pet.textContent = old; }, 800);
+    }
+  });
+
+  pet.addEventListener('click', () => send({type:'pet.touch', gesture:'pet'}));
+  pet.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') send({type:'pet.touch', gesture:'pet'}); });
+  $('accept').addEventListener('click', () => decision('accept'));
+  $('decline').addEventListener('click', () => decision('decline'));
+
+  $('connectCodex').addEventListener('click', async () => {
+    const r = await fetch('/api/codex/connect', {method:'POST'}); const data = await r.json();
+    log(data.ok ? 'Codex connected' : `Codex connect failed: ${data.error}`);
+  });
+  $('mockApproval').addEventListener('click', async () => {
+    const r = await fetch('/api/mock/approval', {method:'POST'}); const data = await r.json(); log(`Mock approval ${data.requestId}`);
+  });
+  $('newThread').addEventListener('click', async () => {
+    const cwd = $('cwd').value.trim();
+    const r = await fetch('/api/codex/thread', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(cwd ? {cwd} : {})});
+    const data = await r.json();
+    if (data.threadId) { threadId = data.threadId; $('threadInfo').textContent = `Thread: ${threadId}`; log(`Created thread ${threadId}`); }
+    else log(`Thread creation failed: ${JSON.stringify(data)}`);
+  });
+  $('runTurn').addEventListener('click', async () => {
+    const text = $('prompt').value.trim(); const cwd = $('cwd').value.trim();
+    if (!threadId) { log('请先新建 Thread'); return; }
+    if (!text) { log('请输入任务'); return; }
+    const body = {threadId, text, ...(cwd ? {cwd} : {})};
+    const r = await fetch('/api/codex/turn', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(body)});
+    const data = await r.json(); log(data.turnId ? `Turn started ${data.turnId}` : `Turn failed: ${JSON.stringify(data)}`);
+  });
+})();
+</script>
+</body>
+</html>
