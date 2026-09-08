@@ -1,0 +1,17 @@
+{
+  "name": "codex-pet-terminal",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/companion"
+  ],
+  "scripts": {
+    "dev": "npm --workspace apps/companion run dev",
+    "build": "npm --workspace apps/companion run build",
+    "start": "npm --workspace apps/companion run start",
+    "test": "npm --workspace apps/companion run test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
